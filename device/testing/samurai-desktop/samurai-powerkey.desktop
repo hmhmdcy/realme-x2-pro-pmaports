@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Samurai Power Key
+Comment=Idempotent display power control for the physical power key
+Exec=/usr/libexec/samurai-powerkey
+OnlyShowIn=KDE;
+NoDisplay=true
+X-KDE-autostart-after=powerdevil
+X-KDE-autostart-phase=2
