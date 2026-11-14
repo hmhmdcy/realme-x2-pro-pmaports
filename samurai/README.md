@@ -2,14 +2,14 @@
 
 本仓库是用户态 APKBUILD、补丁、服务和设备配置的正式归属。内核源码在 [`hmhmdcy/realme-x2-pro-linux`](https://github.com/hmhmdcy/realme-x2-pro-linux/tree/samurai-ipe-variable-pd10-441)，EDK2、DTB、历史快照和发布证据在 [`hmhmdcy/realme-x2-pro-edk2`](https://github.com/hmhmdcy/realme-x2-pro-edk2)。先读 [STATUS.md](STATUS.md)，不要把构建成功等同于所有硬件通过。
 
-推荐 `samurai-userspace`：前六个提交按主题整理工具链、相机、Turnip、radio/GNSS、平台和文档，之后继续记录 r33/r28、GeoClue/PipeWire 及验证修正；原 `samurai-bringup` 保留历史。当前候选固定 libcamera `99990.7.2-r33`、config/stack `0.1.0-r28`、platform `5-r3`、desktop `3-r1`、GNSS `2-r1`、GeoClue `2.8.2-r1` 和 PipeWire `1.6.9-r3`。`r34/r29` 没有安装证据，不是稳定发布。**IMX319 的内核实验供电/OF 依赖尚未正式化，整机纯净维护版本未发布。**
+当前公开默认分支是 `stable`，配方对应已发布的 APK 基线：libcamera `99990.7.2-r33`、config/stack `0.1.0-r28`、platform `6-r18`、desktop `4-r16`、GNSS `2-r1`，并包含 `usb-signaller 0.4.3-r11` 与 `unudhcpd 0.5.0-r2` 配方。`codex/*`、`samurai-userspace` 和 `samurai-bringup` 是开发/历史分支。**IMX319 的内核实验供电/OF 依赖尚未正式化，整机纯净维护版本未发布。**
 
 ## 环境与隔离构建
 
 需要 Linux x86_64 或 ARM64、Python 3.12以上、Git、sudo/挂载权限、约 25 GiB 可用的 ext4 工作空间。WSL2 可以使用，但 work 目录必须在 Linux 文件系统，不能放在 `/mnt/c`、`/mnt/e` 等 NTFS 挂载上。需联网获取 APK 和已锁定的源码。构建期间保持 WSL 实例运行。
 
 ```sh
-git clone --branch samurai-userspace https://github.com/hmhmdcy/realme-x2-pro-pmaports.git
+git clone --branch stable https://github.com/hmhmdcy/realme-x2-pro-pmaports.git
 cd realme-x2-pro-pmaports
 python3 samurai/bootstrap.py --work "$HOME/samurai-build" --build --lax --jobs 4
 ```

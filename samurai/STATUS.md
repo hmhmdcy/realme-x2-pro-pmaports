@@ -25,7 +25,7 @@
 
 - libcamera / IPA / tools / GStreamer / V4L2：`99990.7.2-r33`
 - samurai-camera-config / samurai-camera-stack：`0.1.0-r28`
-- samurai-platform：`5-r3`；samurai-desktop：`3-r1`；samurai-gnss-assist：`2-r1`
+- samurai-platform：`6-r18`；samurai-desktop：`4-r16`；samurai-gnss-assist：`2-r1`
 - GeoClue：`2.8.2-r1`；PipeWire：`1.6.9-r3`（含 `gst-plugin-pipewire` 子包）
 - ModemManager / libmm-glib：`1.25.95_git20261005-r4`；Mesa Turnip：`26.2.4-r2`
 

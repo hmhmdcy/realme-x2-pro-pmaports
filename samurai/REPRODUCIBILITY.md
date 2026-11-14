@@ -24,8 +24,8 @@
 | samurai-camera-config / samurai-camera-stack | `0.1.0-r28` |
 | geoclue | `2.8.2-r1` |
 | pipewire / pipewire-libs / gst-plugin-pipewire | `1.6.9-r3` |
-| samurai-platform | `5-r3` |
-| samurai-desktop | `3-r1` |
+| samurai-platform | `6-r18` |
+| samurai-desktop | `4-r16` |
 | samurai-gnss-assist | `2-r1` |
 | modemmanager / libmm-glib | `1.25.95_git20261005-r4` |
 | mesa-vulkan-freedreno-samurai | `26.2.4-r2` |
