@@ -1,4 +1,258 @@
-# samurai-platform 5-r23
+# samurai-platform 6-r18 (installed 2026-11-14)
+
+> 2026-11-14: the r18 main and pulse APKs were built natively on RMX1931,
+> passed `apk verify`, and were installed with
+> `apk add --no-network --scripts=no --upgrade`.  The scripts were
+> intentionally skipped because the live host-mode test had only Wi-Fi
+> SSH; the package post-install would restart ModemManager and
+> usb-signaller.  Wi-Fi stayed connected throughout the file upgrade.
+>
+> ```text
+> samurai-platform-6-r18.apk
+> SHA-256 02da6d9467c2547a67a280112b6558a1fe6426f91609632bdb9b4da5531e1c50
+>
+> samurai-platform-pulse-6-r18.apk
+> SHA-256 f06bd143b561d412872d89ebe3768e66a62dffe0895e14abb481d2f8543b6e2e
+> ```
+>
+> Installed `/usr/sbin/samurai-wifi-recover` SHA-256 is
+> `8d10d7f60c18acef879264fd074cc28f858ca57e4c78f4ba2a6cfe0487079ef7`.
+>
+> 2026-11-13 candidate: `6-r18` makes `samurai-wifi-recover` discover
+> the saved Wi-Fi connection instead of hard-coding `Samurai Wi-Fi`.
+> The NetworkManager connection id is user-defined and normally the
+> SSID; the current handset uses `TP-LINK_156D`. The signed APK was
+> subsequently rebuilt as the installed 6-r18 above.
+
+> 2026-11-13 22:40 source candidate: `6-r17` updates the read-only
+> `samurai-otg-capture` helper to recognize the board's MP2650
+> `mp2650-vbus` regulator as well as the older PM8150B `usb_vbus`
+> name. This change is included in the installed 6-r18 APK above; the
+> standard URS/VBUS behavior itself is unchanged.
+
+> 2026-11-13 candidate: `6-r15` adds the read-only
+> `/usr/sbin/samurai-otg-capture` udev helper and
+> `/usr/lib/udev/rules.d/90-samurai-otg-capture.rules`. It records
+> USB role transitions, Type-C/PM8150B VBUS state, xHCI/lsusb/lsblk,
+> usb-moded state and the read-only OTG probes into
+> `/var/log/samurai/otg-events.log`; it does not mount, change roles,
+> restart services or poll. The signed APKs verify:
+> `samurai-platform-6-r15.apk` SHA-256
+> `4f10f6e794ba54ce35bf05b688ad774b5ab26a4dfea4e7d71db1df54656f5205`;
+> `samurai-platform-pulse-6-r15.apk` SHA-256
+> `0a202e2ff692d519b5c93c10c6c3fd873b70e31507332b58ae7f04aa6429ead2`.
+> At that time the live rootfs remained on `6-r14`: apk 3.0.8 could not
+> solve the upgrade against the existing `cmd:` provider versions and an
+> unrelated openssh version constraint. The helper and rule were installed
+> directly for physical-test capture. The live rootfs is now on `6-r18`;
+> keep an eye on a directly installed `/etc/udev/rules.d` copy when doing
+> a clean package-managed rebuild.
+
+> 2026-11-13 final: `6-r14` raises the package dependency to
+> `usb-signaller>=0.4.3-r9`, matching the packaged supervisor restart
+> fix. The board files are unchanged from r13. Signed APKs:
+> `samurai-platform-6-r14.apk` SHA-256
+> `d3903ce6981c474dcc1bca8b394388c16c74e1e950cb6e005151ce09b7b522df`;
+> `samurai-platform-pulse-6-r14.apk` SHA-256
+> `335161fbabd6e2e4528e4762d58c3ac405b35830875b2b2fd2937445675e2d9b`.
+> The main APK was upgraded with `--scripts=no` so the live USB state
+> was not torn down; `apk info -R samurai-platform` reports the r9
+> dependency.
+
+> 2026-11-13 后续：`6-r13` source adds
+> `[main] default_mode = "developer_mode"` to the board
+> `/etc/usb-signaller.d/90-samurai.toml` drop-in. This makes a clean
+> `usb-signaller` start return to Developer NCM after Charging-only.
+> The file was deployed directly on the handset and verified with
+> Developer/UDC/carrier/NetworkManager/unudhcpd. The signed
+> `samurai-platform-6-r13.apk` was then built with the intentional
+> `/usr/local` ModemManager D-Bus override and installed with
+> `--scripts=no`; three host→device rounds and USB NCM SSH passed.
+> APK SHA-256 `b8f7b11a88d702ab7b3fb9cf512e1207aa9456688bebb0b691e37fbe32062598`.
+> `APKBUILD` uses `options="!check !fhs"` solely because that
+> pre-existing distribution override lives under `/usr/local`; this is
+> not a general allowance for new board-private files.
+
+6-r9 began the current OTG recovery candidate line. It keeps the standard postmarketOS
+USB ownership model and adds the bounded `samurai-usb-recover` path:
+
+```text
+usb-signaller 0.4.3-r9
+unudhcpd 0.5.0-r2
+postmarketos-usb-moded
+NetworkManager + unudhcpd.usb0 + umtprd
+Developer 172.16.42.1/16, 0525:a4a1, qmult=20
+Tethering 10.42.0.1/24
+MTP 0525:a4a2
+```
+
+When the installed dual-role kernel registers a standard `usb_role`
+provider, `usb-signaller` exposes `host_mode` through the same
+usb-moded D-Bus API. In synthetic host/device tests the role switch,
+`usb-moded.mode_request=host_mode`, xHCI root buses and return to
+Developer NCM all worked without a board-owned host command. Physical
+OTG adapters and attached peripherals are still a separate hardware
+acceptance.
+
+The recovery service preserves the active usb-moded mode across a DWC3
+unbind/bind, restarts the matching standard mode service, and bounds
+`rc-service` calls so a stalled controller cannot hang the monitor.
+6-r2 and later toggle the standard UDC `soft_connect` control so the host
+performs a clean enumeration and DHCP exchange instead of retaining its
+failed NCM adapter state. The ordinary reboot and `ip link down`
+recovery tests are recorded in `linux-port/docs/PMOS-USB-20261112.md`.
+Physical cable/orientation checks and same-cable U3 host-resume remain
+open.
+
+6-r3 added a separate bounded reattach path for an explicit transition
+from `host_mode` (or another non-NCM mode) back to Developer/Tethering.
+The previous controller can report UDC `configured` while the host never
+raises NCM carrier; because VBUS never toggles, the older recovery state
+machine stayed disarmed. The new path records
+`MODE_REATTACH mode=...`, waits for the standard mode service, then uses
+the same bounded DWC3 unbind/bind and UDC `soft_connect` recovery. The
+attempt budget remains at most two per cable session.
+
+6-r4 and 6-r5 close the mode-transition race found by repeated
+`test-usb-moded-host-mode.sh` runs:
+
+- an unrecognised D-Bus state pauses recovery instead of falling back to
+  the wrong configfs mode;
+- the mode-request D-Bus call has an explicit reply timeout;
+- a new Developer/Tethering session resets the bounded retry budget,
+  logged as `BUDGET_RESET reason=mode_transition`;
+- the offline mode-transition test checks the reset explicitly.
+
+6-r6 also makes a missed short `host_mode` transition recoverable. The
+monitor records the active configfs gadget generation (inode and
+timestamps), not only the polled D-Bus mode name. A later gadget
+generation is treated as a new user session even if the monitor never
+sampled `host_mode`. Recovery writes the post-rebind generation back as
+the baseline, so the watchdog cannot mistake its own restart for a new
+session and reset its retry budget forever. A three-round handset run of
+the standard host-mode test passed with a bounded attempt count. The
+offline generation regression is
+`linux-port/diagnostics/test-usb-recover-generation.sh`.
+
+6-r7 introduced a soft-first path for `MODE_REATTACH`: when UDC is still
+`configured` but NCM carrier is missing, the recovery service first
+toggles the public UDC `soft_connect` control and waits for carrier. It
+only performs the full DWC3 unbind/bind when that lightweight reconnect
+does not recover the link.
+
+6-r8 extends the same soft-first behavior to an established `link_lost`
+event. Offline fake-sysfs tests `test-usb-recover-soft-first.sh` and
+`test-usb-recover-soft-link-lost.sh` prove that successful soft recovery
+emits `SOFT_RECOVER_OK`, leaves the DWC3 unbind control untouched, and
+does not consume a full-recovery attempt. This keeps the standard
+controller reset as the fallback while avoiding an unnecessary DWC3
+rebind on a stale host-side link.
+
+6-r9 adds a separate bounded path for a host that addressed the UDC but
+stopped before SET_CONFIGURATION. When VBUS is online, the selected mode
+is Developer/Tethering, and UDC state is `default` or `address` with a
+known link speed, recovery first toggles the standard UDC `soft_connect`
+and then falls back to the same bounded DWC3 rebind. It never acts on an
+unattached UDC or a charger-only cable. The matching offline test is
+`test-usb-recover-enum-stuck.sh`.
+
+6-r10 removes the earlier carrier-loss and mode-reattach recovery
+paths. A configured UDC with NCM carrier 0 is a valid network state:
+Windows may leave the NCM data interface at alt 0 while idle. Rebinding
+DWC3 there caused a reset/enumeration feedback loop. Recovery now acts
+only after `default`/`address` persists for 30 seconds, does not reset
+its attempt budget on a gadget-generation change, and never treats
+carrier loss as a USB reset condition. The regression is
+`test-usb-recover-carrier-no-reset.sh`; the removed soft-first and
+soft-link-lost tests no longer apply.
+
+6-r11 adds `/usr/sbin/samurai-wifi-recover`. The Plasma Mobile Wi-Fi
+KCM (`plasma-settings -m kcm_mobile_wifi`) can get stuck sending
+NetworkManager radio-control on/off requests; when that happens,
+`rfkill` may remain soft-blocked and `wlan0` stays down. The recovery
+script kills only that stuck KCM, clears the Wi-Fi rfkill block,
+enables the NetworkManager radio and brings `wlan0` up without
+restarting NetworkManager, so USB NCM SSH remains available.  It
+discovers the saved Wi-Fi connection from NetworkManager instead of
+assuming a fixed connection id; the current handset uses the SSID
+`TP-LINK_156D`.
+
+Earlier signed candidate:
+
+```text
+E:/edk2-samurai-out/standard-arm64-v731/
+  usb-hotfix-otg-r8-20261112/samurai-platform-6-r8.apk
+SHA-256 a69d81d8cb2729fd51cfc6a9c1e73b001e6efa29e2bf0369c4fb3ced5a4bd3f3
+```
+
+The 6-r6 generation fix and the 6-r10 carrier-no-reset policy are the
+live recovery implementation. The 6-r8 soft-first fallback was
+offline-tested but has been withdrawn because carrier 0 is a valid NCM
+idle state and the rebind caused a host enumeration feedback loop. The
+6-r10 script is deployed; the signed APK package still needs rebuilding
+and package-level verification.
+
+6-r1 moved the runtime USB gadget owner from the board script
+`samurai-usb` to the standard postmarketOS stack:
+
+- `usb-signaller` owns configfs modes, UDC binding and the usb-moded D-Bus API;
+- NetworkManager owns `usb0` for Developer and Tethering modes;
+- `unudhcpd` provides the standard `172.16.42.1` / `172.16.42.2` address pair;
+- `umtprd` owns FunctionFS MTP;
+- `samurai-usb-recover` remains the bounded SM8150 DWC3 controller recovery,
+  but restarts the active `usb-signaller` backend.
+
+Board USB descriptors live in
+`/etc/usb-signaller.d/90-samurai.toml`, not in a private gadget builder.
+The override uses an upstreamable `[gadget]` layer in
+`usb-signaller>=0.4.3-r9`: `0525:a4a1`, composite class `ef/02/01`,
+`MaxPower=500` and NCM `qmult=20`. MTP uses `0525:a4a2`.
+
+The legacy `/usr/sbin/samurai-usb` remains installed as an explicit
+fallback and now tells NetworkManager to release the interface when it is
+selected. It is removed from the boot runlevel by the package migration.
+The old static NetworkManager `usb0` unmanaged rule is retired.
+
+Runtime evidence on the handset:
+
+- configfs descriptor values match the board drop-in;
+- Developer, Tethering and MTP all reach UDC `configured`;
+- Windows reports `USB\VID_0525&PID_A4A1` Problem 0 for NCM and
+  `USB\VID_0525&PID_A4A2` Problem 0 for MTP;
+- Developer/Tethering service transitions now stop the previous OpenRC
+  mode service instead of leaving it `crashed`;
+- `samurai-usb-recover` reports `armed=1` with the usb-signaller backend.
+- a forced `ip link down` recovery re-establishes DWC3 and triggers a
+  fresh Windows DHCP lease (`172.16.42.2/24`) without an adapter reset;
+  both the composite device and UsbNcm remain at Problem 0.
+
+Still requiring physical cable/orientation checks, unplug/replug after a
+suspend, and long-time suspend/resume soak. The ordinary reboot path is
+recorded in `linux-port/docs/PMOS-USB-20261112.md`; it starts the
+standard usb-signaller Developer gadget without the legacy service.
+
+5-r30 extends `samurai-usb-recover` with a bounded VBUS-on reattach
+watchdog. It already recovers an established NCM link after 12 seconds
+lost while VBUS is present, performing at most two complete DWC3
+unbind/bind cycles per cable session. The new path also waits 20 seconds
+after a VBUS 0 -> 1 transition if the UDC never becomes `configured`;
+that covers an unplug/replug that leaves the controller stale. A
+successful recovery returns to the normal five-minute attempt-reset
+window. Both the established-link and reattach paths use the same
+standard DWC3 unbind/bind interface, log their reason, and stop after the
+two-attempt budget; there is no infinite loop or private kernel ABI. The
+reattach state machine has an offline fake-sysfs test. It only activates
+after a cable session has reached UDC `configured` at least once, so a
+wall charger that never enumerates does not cause a rebind loop. A physical
+unplug/replug and cold-boot acceptance are still required.
+
+5-r26 removes the 5-r25 USB VBUS wake udev rule. The PM8150 GPIO10
+`extcon-usb-gpio` assumption was disproved on hardware: the vendor DTS
+comments out `vbus-gpio` and its `&usb1` consumer, GPIO10 does not follow
+VBUS, and IRQ 120 never fires. The package no longer installs any extcon
+wake policy. The board now uses the standard DWC3 gadget suspend/resume
+path; USB wake is not claimed. See
+`linux-port/docs/USB-REMOTE-WAKE-20261111.md`.
 
 5-r23 removes the board-owned `samurai-sleep-inhibitor` service,
 `/etc/samurai/sleep-inhibitor.conf` and installed
