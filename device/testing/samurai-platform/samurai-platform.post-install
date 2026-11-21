@@ -3,6 +3,7 @@
 conf=/etc/conf.d/modemmanager
 sshd_conf=/etc/conf.d/sshd
 nm_conf=/etc/conf.d/networkmanager
+sleep_conf=/etc/conf.d/sleep-inhibitor
 
 drop_dep()
 {
@@ -68,12 +69,38 @@ if command -v rc-update >/dev/null 2>&1; then
 		rc-update del samurai-sleep-inhibitor default >/dev/null 2>&1 || true
 		rm -f /etc/runlevels/default/samurai-sleep-inhibitor
 	fi
+	# A debug-era supervise-daemon can survive removal of its init file.
+	# Retire the old process before the official service takes over.
+	if command -v pkill >/dev/null 2>&1; then
+		pkill -TERM -f '^supervise-daemon samurai-sleep-inhibitor ' >/dev/null 2>&1 || true
+		pkill -TERM -f 'python3 /usr/bin/sleep-inhibitor --config /etc/samurai/sleep-inhibitor.conf' >/dev/null 2>&1 || true
+		for _ in 1 2 3 4 5; do
+			if ! pgrep -f '^supervise-daemon samurai-sleep-inhibitor ' >/dev/null 2>&1 &&
+				! pgrep -f 'python3 /usr/bin/sleep-inhibitor --config /etc/samurai/sleep-inhibitor.conf' >/dev/null 2>&1; then
+				break
+			fi
+			sleep 1
+		done
+		pkill -KILL -f '^supervise-daemon samurai-sleep-inhibitor ' >/dev/null 2>&1 || true
+		pkill -KILL -f 'python3 /usr/bin/sleep-inhibitor --config /etc/samurai/sleep-inhibitor.conf' >/dev/null 2>&1 || true
+	fi
 	# APK normally removes files that left the package manifest; these
 	# explicit removals also cover preserved /etc copies from old upgrades.
 	rm -f /etc/init.d/samurai-sleep-inhibitor \
 		/etc/conf.d/samurai-sleep-inhibitor \
 		/etc/samurai/sleep-inhibitor.conf \
 		/usr/libexec/samurai-usb-sleep-guard
+fi
+
+# Older board packages pointed the official OpenRC service at their removed
+# configuration. Restore the unmodified Alpine base file when that exact
+# debug override is present.
+if [ -f "$sleep_conf" ] &&
+	grep -qx 'command_args="--config /etc/samurai/sleep-inhibitor.conf"' "$sleep_conf"; then
+	cat >"$sleep_conf" <<'EOF'
+# required to clean up completely since service forks processes
+rc_cgroup_cleanup="yes"
+EOF
 fi
 
 # Adopt a ModemManager that may have been started by legacy D-Bus activation.
@@ -95,16 +122,67 @@ fi
 # ssh-session-open policy, and use an explicit elogind-inhibit only inside a
 # bounded debug test; do not install a carrier-only production service.
 if command -v rc-service >/dev/null 2>&1; then
-	if rc-service sleep-inhibitor status >/dev/null 2>&1; then
-		:
-	else
-		rc-service sleep-inhibitor start >/dev/null 2>&1 || true
-	fi
+	rc-service sleep-inhibitor restart >/dev/null 2>&1 || true
 fi
 
 if command -v udevadm >/dev/null 2>&1; then
 	udevadm control --reload-rules >/dev/null 2>&1 || true
 	udevadm trigger --subsystem-match=input --action=change >/dev/null 2>&1 || true
+fi
+
+if command -v rc-update >/dev/null 2>&1 &&
+	[ -x /etc/init.d/usb-signaller ]; then
+	# Migrate from the board-owned NCM gadget to the standard postmarketOS
+	# usb-signaller backend. A fresh install starts the distro service; an
+	# already-migrated system only refreshes the network profile.
+	migrating=0
+	rc-service usb-signaller status >/dev/null 2>&1 || migrating=1
+	rc-update add usb-signaller default >/dev/null 2>&1 || true
+	rc-update del samurai-usb boot >/dev/null 2>&1 || true
+	rc-update del samurai-usb default >/dev/null 2>&1 || true
+
+	# This old rule made usb0 permanently unmanaged by NetworkManager and
+	# conflicts with usb-signaller's developer/tethering services.
+	rm -f /etc/NetworkManager/conf.d/90-samurai-usb.conf \
+		/etc/NetworkManager/conf.d/90-samurai-usb.conf.apk-new
+	if command -v nmcli >/dev/null 2>&1; then
+		nmcli general reload >/dev/null 2>&1 || true
+		# Profiles created by pre-board-config usb-signaller releases.
+		nmcli connection delete "Developer mode" >/dev/null 2>&1 || true
+		nmcli connection delete "Developer Mode" >/dev/null 2>&1 || true
+	fi
+
+	if [ "$migrating" -eq 1 ]; then
+		[ -x /etc/init.d/samurai-usb ] && rc-service samurai-usb stop >/dev/null 2>&1 || true
+		rc-service usb-signaller start >/dev/null 2>&1 || true
+	elif [ -d /sys/kernel/config/usb_gadget/usb-signaller-developer ]; then
+		rc-service usb-signaller-developer-mode restart >/dev/null 2>&1 || true
+	fi
+	# Retire dead/legacy board glue and diagnostic helpers replaced by
+	# standard declarative UCM2, OpenRC loopback, NetworkManager, and usb-signaller.
+	rm -f /usr/libexec/samurai-audio-route \
+		/etc/init.d/samurai-loopback /etc/runlevels/*/samurai-loopback \
+		/etc/init.d/samurai-usb /usr/sbin/samurai-usb \
+		/usr/sbin/samurai-udhcpc-wlan /usr/sbin/samurai-wifi-recover \
+		/usr/sbin/samurai-otg-capture /usr/lib/udev/rules.d/90-samurai-otg-capture.rules
+	# These were hand-copied during bring-up and must not shadow the real
+	# OpenRC service files.
+	rm -f /etc/init.d/usb-signaller-developer-mode.initd \
+		/etc/init.d/usb-signaller-tethering-mode.initd \
+		/etc/init.d/usb-signaller-mtp-mode.initd
+	# The old debug sleep guard is not part of the standard postmarketOS
+	# usb-signaller stack and can hold a sleep lock outside the official
+	# sleep-inhibitor policy.
+	if [ -x /etc/init.d/usbwake-debug ]; then
+		rc-service usbwake-debug stop >/dev/null 2>&1 || true
+		rc-update del usbwake-debug default >/dev/null 2>&1 || true
+	fi
+fi
+
+if command -v rc-update >/dev/null 2>&1 &&
+	[ -x /etc/init.d/samurai-usb-recover ]; then
+	rc-update add samurai-usb-recover default >/dev/null 2>&1 || true
+	rc-service samurai-usb-recover restart >/dev/null 2>&1 || true
 fi
 
 # NFC uses the upstream neard daemon and the kernel's standard NCI device.
@@ -113,6 +191,47 @@ fi
 # explicitly when the handset is online.
 if [ -x /etc/init.d/neard ] && command -v rc-update >/dev/null 2>&1; then
 	rc-update add neard default >/dev/null 2>&1 || true
+fi
+
+# This handset reports WLAN/BT/NFC killswitches through the kernel rfkill
+# class, and its GPIO key device is consumed by the Wayland compositor.
+# urfkilld defaults to key_control=true, which grabs /dev/input/event* with
+# EVIOCGRAB; that grab fails while KWin holds the device, so urfkilld exits 1
+# immediately and OpenRC reports the service as failed. The upstream guidance
+# for machines with hardware-controlled rfkill keys is key_control=false, and
+# the live device keeps running with it.
+urfkill_conf=/etc/urfkill/urfkill.conf
+if [ -f "$urfkill_conf" ] &&
+	! grep -qx 'key_control=false' "$urfkill_conf"; then
+	if grep -qx '# key_control=true' "$urfkill_conf"; then
+		sed -i 's|^# key_control=true$|key_control=false|' "$urfkill_conf"
+	elif grep -qx 'key_control=true' "$urfkill_conf"; then
+		sed -i 's|^key_control=true$|key_control=false|' "$urfkill_conf"
+	else
+		printf '\nkey_control=false\n' >>"$urfkill_conf"
+	fi
+fi
+# urfkilld writes this profile file itself; drop a stale copy so the next
+# start derives it from the configuration above.
+rm -f /etc/urfkill/hardware.conf
+if command -v rc-service >/dev/null 2>&1; then
+	rc-service urfkill zap >/dev/null 2>&1 || true
+	rc-service urfkill restart >/dev/null 2>&1 || true
+fi
+
+# post-install: rootfs NCM link glue
+# usb-signaller owns the configfs gadget, but nothing
+# brings usb0 UP.  u_ether only fills its RX queue and raises carrier after
+# eth_open(), so a carrier-gated NetworkManager profile can never start the
+# link.  Keep the board glue as the single owner of link state while the
+# gadget-generation is alive, and retire the old one-shot boot service.
+rm -f /etc/runlevels/boot/samurai-ncm-fallback \
+	/etc/runlevels/default/samurai-ncm-fallback \
+	/etc/init.d/samurai-ncm-fallback \
+	/usr/sbin/samurai-ncm-watchdog
+if [ -x /etc/init.d/samurai-usb-network ] && command -v rc-update >/dev/null 2>&1; then
+	rc-update add samurai-usb-network default >/dev/null 2>&1 || true
+	rc-service samurai-usb-network restart >/dev/null 2>&1 || true
 fi
 
 exit 0

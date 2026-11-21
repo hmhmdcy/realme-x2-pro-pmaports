@@ -1,79 +1,143 @@
-# RMX1931 Plasma Mobile 桌面配方 4-r11
+# RMX1931 Plasma Mobile desktop recipe 4-r19
 
-4-r11 restores the postmarketOS tinydm baseline. The package no longer
-writes `rc_need`, `rc_use`, `rc_cgroup_cleanup` or `AUTOLOGIN_UID` into
-`/etc/conf.d/tinydm`; it only removes the exact board-era values left by
-4-r7..4-r10. `postmarketos-base-ui` owns the file, including
-`rc_cgroup_cleanup="yes"` and `AUTOLOGIN_UID=10000`.
+This package is the thin board layer around the postmarketOS Plasma Mobile
+baseline. It owns the tinydm session selection and the old-session cleanup
+hook; it does not own the power-key or DPMS policy.
 
-This means the graphical session follows the upstream tinydm dependency
-graph (`need localmount`, `want dbus elogind`) instead of a local hard
-dependency on optional hardware or a board sleep service. Active SSH is
-protected by the official `ssh-session-open` plugin in the upstream
-sleep-inhibitor configuration. USB carrier-only keep-awake is no longer
-installed by any production package.
+## Official path
 
-4-r10 and 4-r9 were the prior transition versions. They removed historical
-`tinydm` ordering behind ModemManager, Bluetooth and the sensor proxy, but
-still left `rc_need="dbus elogind"` and a board `rc_use` line. 4-r11 removes
-those remaining overrides.
+The official postmarketOS Plasma stack uses:
 
-4-r8 把 `iio-sensor-proxy` 从 tinydm 的硬依赖改为有顺序的 `rc_use`
-软依赖。这样 `samurai-ssc` 或 SensorProxy 在启动早期失败时，Plasma
-仍能启动；传感器恢复后仍可由正常的 OpenRC 服务重新提供，不用把整个
-桌面登录链绑定到一条可选硬件路径。当前包已安装并做过运行态检查，
-多次冷启动仍待验证。
+- `postmarketos-base-ui` with `HandlePowerKey=ignore` in
+  `/etc/elogind/logind.conf`;
+- KWin's `DpmsInputEventFilter` for wake-on-input and DPMS transitions;
+- PowerDevil's mobile default `PowerButtonAction=ToggleScreenOnOff` (128).
 
-4-r7 是历史实现：它曾让 `tinydm` 的 `rc_need` 指向板级
-`samurai-sleep-inhibitor`，4-r11 已恢复上游服务。
+## Auto-suspend is disabled by default (4-r17, both keys since 4-r19)
 
-此目录对应 `device/testing/samurai-desktop` 的 Plasma Mobile 默认桌面
-元包。它不再安装或启动 Phosh、Phoc、greetd；旧的
-`samurai-phosh-*`、`greetd.confd` 和 Snapshot 配置仅作为历史文件保留，
-不进入新包的 payload。
+`powerdevilrc` is installed as `/etc/xdg/powerdevilrc`, so it is a system
+default rather than a per-user override, and a user's own
+`~/.config/powerdevilrc` still wins.
 
-`depends` 显式固定 Plasma Mobile、tinydm、板级平台包、通话/SMS 和门户
-依赖，并显式选择含 OpenRC 服务的 `modemmanager`/`bluez`；当前 Plasma
-音频栈通过 `samurai-platform-pulse` 选择 PulseAudio 适配层。
-`samurai-desktop.post-install` 只调用发行版已有的
-`tinydm-set-session` 和 OpenRC 接口：
+All three profiles pin both spellings of KDE's "Never":
 
-- 默认会话设为 `plasma-mobile.desktop`；
-- `tinydm` 加入 default runlevel，并移除 greetd 的 default 注册；
-- 不再写 `rc_need`/`rc_use`/`AUTOLOGIN_UID`；
-- 只清理 4-r7..4-r10 注入的精确旧值，保留 postmarketOS 官方配置。
+```ini
+[AC][SuspendAndShutdown]
+AutoSuspendAction=0
+AutoSuspendIdleTimeoutSec=0
+[Battery][SuspendAndShutdown]
+AutoSuspendAction=0
+AutoSuspendIdleTimeoutSec=0
+[LowBattery][SuspendAndShutdown]
+AutoSuspendAction=0
+AutoSuspendIdleTimeoutSec=0
+```
 
-该包不使用 `systemd`、`wlr-randr` 或 Phoc 私有配置。显示模式与亮度走
-KWin/KScreen，亮度由 PowerDevil 的 KAuth 背光 helper 和
-`org.kde.ScreenBrightness` 标准 D-Bus 接口提供。
+The two keys exist because KDE's two power frontends write "Never"
+differently: the desktop KCM sets `AutoSuspendAction=0`
+(`PowerDevil::PowerButtonAction::NoAction`), the Plasma Mobile KCM sets
+`AutoSuspendIdleTimeoutSec=0`.  Setting both means either UI reports and
+enforces "Never" instead of "Sleep after 0 seconds".
 
-`4-r6` 的历史配置把 `samurai-sleep-inhibitor` 放入 `rc_need`，并用
-`rc_after` 等待 ModemManager/蓝牙；`4-r9` 移除了这些可选硬件顺序，
-`4-r11` 又移除了剩余的本地 tinydm 覆盖。
-安装时仍会停止可能占用 DRM 的遗留 `greetd`。板级 `5-r20` 起默认只由
-标准 `ssh-session-open` 插件持有 sleep 锁；USB carrier guard 必须显式
-启用，因此仅插着充电线不会永久阻止 suspend。
+The reason is measured, not stylistic: on the 7.3.1 kernel the device only
+supports `s2idle`, and entering `s2idle` takes down both the USB/NCM link
+and the Wi-Fi link.  Those are the only remote access paths, so an
+unattended suspend makes the device unreachable until someone presses the
+power key.  Logged on 2026-11-19:
 
-包内 `samurai-tinydm-stop` 通过 tinydm 的 `stop_pre` 钩子在停止
-autologin seat 前清理旧 KWin session cgroup。这样 `tinydm restart`
-不会留下第二套 compositor 或占用 power-key 锁；正常路径仍先用
-`loginctl terminate-session`，仅在旧 cgroup 仍存活时才 fallback 到
-有界 `cgroup.kill`。
+```text
+systemd-logind: suspend requested from client ... ('org_kde_powerde')
+kernel: PM: suspend entry (s2idle)
+kernel: PM: suspend exit            (13 minutes later, on power key)
+```
 
-包内还安装 `samurai-powerkey` 会话桥接。它通过 evdev 独占
-`pm8941_pwrkey`，避免 PowerDevil 的缓存 Toggle 再次处理同一个按键，
-并用标准 `kscreen-doctor --dpms show` 读取 KWin 的真实 DPMS
-状态，不再把 `/sys/class/backlight/*/bl_power` 当成 DPMS 状态。背光值
-只作为面板首帧门控的唤醒提示：唤醒时先直接断言 DPMS On；只有 1 秒内
-面板仍被门控时才执行一次 60 Hz ↔ 90 Hz 模式切换。桥接由 OpenRC 的
-`samurai-powerkey` 服务启动，并在关屏前调用
-`org.freedesktop.ScreenSaver` 锁定会话。启动约 1 秒后开始检查
-KScreen 的 DPMS 状态，最多重试 10 次；若新会话仍停在 Off 且没有用户
-主动关屏记录，则用标准 KScreen 接口断言 On，修复会话重启后的黑屏。
-如果 KWin 输入过滤器已经先点亮输出，桥接会根据关闭态背光或待恢复
-标记把电源键仍识别为唤醒，不会重放成第二次关屏；主动关屏会取消待恢复
-标记，KWin 在 6 秒唤醒窗口内翻回 Off 时最多执行两次 `wake race`
-恢复。
+`AutoSuspendAction=0` is not a private debug flag: it is the same value the
+desktop KCM writes when "When inactive: Never" is selected, and
+`PowerDevilProfileSettings.kcfg` defines it as a normal profile setting
+(`UInt`, `NoAction = 0`).  The acceptance checks assert all three sections
+contain both keys and reject any other action, so a future refactor cannot
+silently re-enable suspend.
 
-实机验证、接口清单及 PowerDevil 会话注意事项见
-[`PLASMA-MOBILE.md`](../../docs/PLASMA-MOBILE.md)。
+The upstream **critical battery** action is deliberately left alone.  At
+5% charge PowerDevil still follows `[BatteryManagement]
+BatteryCriticalAction`, whose default is `Sleep` when the system can
+suspend.  That is a safety floor against over-discharging the pack, not
+idle auto-suspend, and it is not affected by the profile keys above.
+
+An explicit suspend (KDE menu, `systemctl suspend`) still works and still
+drops the links.  Use the power key to wake.
+
+Runtime evidence on the live device (2026-11-19):
+
+```text
+22:17:45 suspend requested from client ... ('org_kde_powerde')   <- before
+22:17:45 kernel: PM: suspend entry (s2idle)
+22:30:53 kernel: PM: suspend exit                                  (power key)
+22:36:51 plasma-settings: Setting to never suspend                <- changed
+23:36:58 suspend requests this boot: 1                            <- 60 min, no more
+```
+
+Two verification layers are used, since PowerDevil does not expose the
+idle timeout as a D-Bus property:
+
+- `linux-port/scripts/check-settings-provenance.sh` asserts all three
+  sections in `/etc/xdg/powerdevilrc` contain `AutoSuspendAction=0` and
+  `AutoSuspendIdleTimeoutSec=0`, and that neither key has any other value.
+- `linux-port/scripts/check-powerdevil-effective.sh` additionally proves
+  the live service answers on the session bus and that the boot log
+  contains no repeated suspend request after the setting was pinned.
+
+There is no per-device power-key daemon in the official pmaports design.
+
+### Ownership caveat for images built outside apk
+
+The live image on 2026-11-20 shows `samurai-desktop 4-r16` installed while
+`/etc/xdg/powerdevilrc` exists and is *not* listed in
+`/lib/apk/db/installed`.  The image builder wrote the file directly into
+the filesystem, so the value is live but no package owns the path.  That is
+harmless for the running system, and it is why
+`check-settings-provenance.sh` now reports it: a file no package owns
+cannot be replaced by `apk`.
+
+apk-tools 3.x does not treat this as a conflict.  In
+`apk_db_migrate_files_for_priority()` an existing file with no installed
+owner takes the `COMMIT` path and is then recorded as owned by the new
+package, so installing a repository build converts the stray file into
+a normal, tracked one.  Until that happens, the source of truth for this
+default is the package plus the prebuilt image, not the installed database.
+
+## Local change
+
+4-r16 removes the retired `samurai-powerkey` Python bridge and its OpenRC
+service from the package. During upgrade, the post-install script stops and
+disables the old service, removes its binary and init script, and leaves
+`/var/log/samurai-powerkey.log` in place as evidence. The KWin/PowerDevil
+path then owns the physical power key directly.
+
+The remaining files are:
+
+- `/usr/share/samurai/plasma-mobile`: session metadata;
+- `/usr/libexec/samurai-tinydm-stop`: bounded cleanup of a stale KWin session
+  before tinydm restarts the autologin seat;
+- `samurai-desktop.post-install`: tinydm session selection and migration away
+  from historical board overrides;
+- `/etc/xdg/powerdevilrc`: the board's "never auto-suspend" system default
+  described above.
+
+## Tradeoff and evidence
+
+The bridge previously masked a panel-side wake bug by forcing a KScreen
+modeset and rewriting backlight sysfs. That made the power key appear to work
+while causing repeated 60/90 Hz panel initialization. The panel wake issue is
+being fixed in the panel driver instead, so the bridge is no longer part of
+the production path.
+
+The installed `kwin-6.8.2-r2` package includes the upstream touch-sequence
+cancel fix: the constructor of `KWin::DpmsInputEventFilter` calls
+`KWin::TouchInputRedirection::cancel()` before installing the DPMS filter.
+
+## Rollback
+
+The last bridge-based package is kept as
+`samurai-desktop-4-r15.apk`. Reinstall it only for a bounded diagnostic
+comparison; do not treat it as the target architecture.

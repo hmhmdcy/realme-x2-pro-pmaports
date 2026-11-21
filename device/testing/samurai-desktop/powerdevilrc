@@ -1,0 +1,33 @@
+# System-wide KDE PowerDevil defaults for the Realme X2 Pro port.
+# Installed as /etc/xdg/powerdevilrc, so a fresh account inherits it.
+#
+# This device only supports s2idle.  On the mainline 7.3.1 kernel, entering
+# s2idle takes down both the USB/NCM link and the Wi-Fi link, which is the
+# only remote access path.  The board default is therefore "never
+# auto-suspend", exactly the value the KDE Energy Saving page writes when
+# the user selects "Never":
+#
+#   AutoSuspendAction=0           (PowerDevil::PowerButtonAction::NoAction)
+#   AutoSuspendIdleTimeoutSec=0   (the Plasma Mobile KCM's "Never" value)
+#
+# Both keys are set because the two KDE frontends represent "Never"
+# differently: the desktop KCM writes AutoSuspendAction=0, while the
+# Plasma Mobile KCM writes AutoSuspendIdleTimeoutSec=0.  Either key alone
+# already prevents the idle timer from being registered, but setting both
+# keeps the default unambiguous in either UI.
+#
+# These are normal user-facing KDE keys, not a private debug override.
+# A user's ~/.config/powerdevilrc still wins, and an explicit
+# `systemctl suspend` still works.
+
+[AC][SuspendAndShutdown]
+AutoSuspendAction=0
+AutoSuspendIdleTimeoutSec=0
+
+[Battery][SuspendAndShutdown]
+AutoSuspendAction=0
+AutoSuspendIdleTimeoutSec=0
+
+[LowBattery][SuspendAndShutdown]
+AutoSuspendAction=0
+AutoSuspendIdleTimeoutSec=0
